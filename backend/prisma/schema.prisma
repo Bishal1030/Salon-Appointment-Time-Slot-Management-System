@@ -11,3 +11,154 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+
+enum Role {
+  ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  password     String
+  role         Role     @default(CUSTOMER)
+  isVerified   Boolean  @default(false)
+
+  appointments Appointment[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+
+model Service {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  durationMin  Int
+  price        Float?
+
+  appointments Appointment[]
+
+  createdAt    DateTime @default(now())
+}
+
+
+model Appointment {
+  id          String   @id @default(uuid())
+
+  userId      String
+  serviceId   String
+
+  user        User     @relation(fields: [userId], references: [id])
+  service     Service  @relation(fields: [serviceId], references: [id])
+
+  startTime   DateTime
+  endTime     DateTime
+
+  status      AppointmentStatus @default(PENDING)
+
+  notificationLogs NotificationLog[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model WorkingHour {
+  id          String   @id @default(uuid())
+  dayOfWeek   Int      // 0 = Sunday ... 6 = Saturday
+  startTime   DateTime
+  endTime     DateTime
+  isActive    Boolean  @default(true)
+}
+
+
+model BreakTime {
+  id          String   @id @default(uuid())
+  startTime   DateTime
+  endTime     DateTime
+  isActive    Boolean  @default(true)
+}
+
+
+model NotificationTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  subject     String
+  body        String
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+}
+
+
+model NotificationLog {
+  id            String @id @default(uuid())
+
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  email         String
+  status        NotificationStatus
+  errorMessage  String?
+
+  createdAt     DateTime @default(now())
+}
+
+
+model BulkJob {
+  id          String @id @default(uuid())
+
+  fileName    String
+  totalRows   Int
+  processed   Int      @default(0)
+  success     Int      @default(0)
+  failed      Int      @default(0)
+
+  status      JobStatus @default(PENDING)
+
+  items       BulkJobItem[]
+
+  createdAt   DateTime @default(now())
+}
+
+model BulkJobItem {
+  id        String @id @default(uuid())
+
+  jobId     String
+  job       BulkJob @relation(fields: [jobId], references: [id])
+
+  email     String
+  service   String
+  time      DateTime
+
+  status    NotificationStatus @default(PENDING)
+  error     String?
+
+  createdAt DateTime @default(now())
+}
