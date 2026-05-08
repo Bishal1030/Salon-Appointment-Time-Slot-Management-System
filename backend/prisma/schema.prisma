@@ -14,7 +14,6 @@ datasource db {
 
 enum Role {
   ADMIN
-  STAFF
   CUSTOMER
 }
 
@@ -46,6 +45,7 @@ model User {
   password     String
   role         Role     @default(CUSTOMER)
   isVerified   Boolean  @default(false)
+  verificationToken String?
 
   appointments Appointment[]
 
