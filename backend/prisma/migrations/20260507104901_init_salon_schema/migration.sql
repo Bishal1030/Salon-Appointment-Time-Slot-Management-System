@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "Role" AS ENUM ('ADMIN', 'STAFF', 'CUSTOMER');
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'CUSTOMER');
 
 -- CreateEnum
 CREATE TYPE "AppointmentStatus" AS ENUM ('PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED');
@@ -18,6 +18,7 @@ CREATE TABLE "User" (
     "password" TEXT NOT NULL,
     "role" "Role" NOT NULL DEFAULT 'CUSTOMER',
     "isVerified" BOOLEAN NOT NULL DEFAULT false,
+    "verificationToken" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
