@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -43,5 +43,12 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'Update appointment details' })
   update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateAppointmentDto) {
     return this.appointmentsService.update(id, req.user.userId, req.user.role, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Cancel/Delete an appointment' })
+  @ApiResponse({ status: 200, description: 'Appointment deleted successfully' })
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.appointmentsService.remove(id, req.user.userId, req.user.role);
   }
 }

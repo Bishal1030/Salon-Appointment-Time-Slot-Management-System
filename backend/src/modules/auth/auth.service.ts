@@ -80,6 +80,12 @@ export class AuthService {
     return {
       message: 'User Loggedin Successfully',
       access_token: token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        selectedTemplateId: user.selectedTemplateId,
+      },
     };
   }
 

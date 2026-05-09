@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Body } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Body, Patch, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { NotificationsService } from '../notifications.service';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
@@ -92,5 +92,23 @@ export class NotificationsController {
   @ApiResponse({ status: 404, description: 'Job not found' })
   getBulkJobStatus(@Param('jobId') jobId: string) {
     return this.notificationsService.getBulkJobStatus(jobId);
+  }
+
+  @Patch('templates/:id/select')
+  @ApiOperation({ summary: 'Select a template for the current user' })
+  @ApiResponse({ status: 200, description: 'Template selected successfully' })
+  selectTemplate(@Req() req: any, @Param('id') id: string) {
+    
+    if (!req.user || !req.user.userId) {
+      throw new UnauthorizedException('User identity not found in token');
+    }
+    
+    return this.notificationsService.selectTemplateForUser(req.user.userId, id);
+  }
+
+  @Get('logs')
+  @ApiOperation({ summary: 'Get all notification logs' })
+  findAllLogs() {
+    return this.notificationsService.findAllLogs();
   }
 }
