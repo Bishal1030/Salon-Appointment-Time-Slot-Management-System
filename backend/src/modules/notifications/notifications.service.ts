@@ -6,12 +6,15 @@ import { JobStatus, NotificationStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 
+import { NotificationsGateway } from './notifications.gateway';
+
 @Injectable()
 export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
     private configService: ConfigService,
+    private gateway: NotificationsGateway,
     @Inject('RMQ_SERVICE') private readonly rmqClient: ClientProxy,
   ) {
     cloudinary.config({
@@ -36,6 +39,17 @@ export class NotificationsService {
       throw new NotFoundException(`Template with ID ${id} not found`);
     }
     return template;
+  }
+
+  async selectTemplateForUser(userId: string, templateId: string) {
+    // Verify template exists
+    await this.findOneTemplate(templateId);
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { selectedTemplateId: templateId },
+      select: { id: true, name: true, email: true, selectedTemplateId: true },
+    });
   }
 
   async uploadToCloudinary(fileBuffer: Buffer, originalName: string): Promise<string> {
@@ -133,17 +147,19 @@ export class NotificationsService {
   }
 
   private async updateItemStatus(id: string, status: NotificationStatus, error?: string) {
-    await this.prisma.bulkJobItem.update({
+    const item = await this.prisma.bulkJobItem.update({
       where: { id },
       data: { status, error },
     });
+    this.gateway.sendNotificationUpdate({ type: 'BULK_ITEM', itemId: id, status, error });
   }
 
   private async incrementJobCounter(jobId: string, counter: 'processed' | 'success' | 'failed') {
-    await this.prisma.bulkJob.update({
+    const job = await this.prisma.bulkJob.update({
       where: { id: jobId },
       data: { [counter]: { increment: 1 } },
     });
+    this.gateway.sendBulkJobUpdate({ jobId, [counter]: job[counter], status: job.status });
   }
 
   async getBulkJobStatus(jobId: string) {
@@ -157,5 +173,102 @@ export class NotificationsService {
     }
 
     return job;
+  }
+
+  async sendAppointmentConfirmation(appointmentId: string, templateId?: string) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { service: true, user: true },
+    });
+
+    if (!appointment) return;
+
+    // Create PENDING log immediately
+    const log = await this.prisma.notificationLog.create({
+      data: {
+        appointmentId: appointment.id,
+        email: appointment.user.email,
+        status: NotificationStatus.PENDING,
+      },
+    });
+
+    // Emit PENDING status to frontend
+    this.gateway.sendNotificationUpdate({ 
+      type: 'SINGLE_APPOINTMENT', 
+      appointmentId: appointment.id, 
+      status: NotificationStatus.PENDING,
+      logId: log.id 
+    });
+
+    try {
+      let template;
+      if (templateId && templateId.trim()) {
+        template = await this.prisma.notificationTemplate.findUnique({ where: { id: templateId } });
+      }
+      
+      if (!template) {
+        template = await this.prisma.notificationTemplate.findFirst({ where: { isActive: true } });
+      }
+
+      if (!template) {
+        throw new Error('No active notification template found');
+      }
+
+      const appointmentDate = new Date(appointment.startTime);
+      
+      const renderedBody = template.body
+        .replace(/{{customerName}}/g, appointment.user.name)
+        .replace(/{{serviceName}}/g, appointment.service.name)
+        .replace(/{{date}}/g, appointmentDate.toLocaleDateString())
+        .replace(/{{startTime}}/g, appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+        .replace(/{{endTime}}/g, new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+      const renderedSubject = template.subject
+        .replace(/{{serviceName}}/g, appointment.service.name);
+
+      await this.mailService.sendMail(appointment.user.email, renderedSubject, renderedBody.replace(/\n/g, '<br>'));
+      
+      //  Update to SENT and emit
+      await this.prisma.notificationLog.update({
+        where: { id: log.id },
+        data: { status: NotificationStatus.SENT },
+      });
+
+      this.gateway.sendNotificationUpdate({ 
+        type: 'SINGLE_APPOINTMENT', 
+        appointmentId: appointment.id, 
+        status: NotificationStatus.SENT,
+        logId: log.id 
+      });
+
+    } catch (error) {
+      // 4. Update to FAILED and emit
+      await this.prisma.notificationLog.update({
+        where: { id: log.id },
+        data: { status: NotificationStatus.FAILED, errorMessage: error.message },
+      });
+
+      this.gateway.sendNotificationUpdate({ 
+        type: 'SINGLE_APPOINTMENT', 
+        appointmentId: appointment.id, 
+        status: NotificationStatus.FAILED,
+        logId: log.id,
+        error: error.message
+      });
+    }
+  }
+
+  async findAllLogs() {
+    return this.prisma.notificationLog.findMany({
+      include: {
+        appointment: {
+          include: {
+            service: true,
+            user: { select: { name: true, email: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }

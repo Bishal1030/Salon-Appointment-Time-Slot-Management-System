@@ -4,11 +4,19 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { Role } from '@prisma/client';
 
+import { NotificationsService } from '../notifications/notifications.service';
+
 @Injectable()
 export class AppointmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateAppointmentDto) {
+    console.log('--- APPOINTMENT CREATION DEBUG ---');
+    console.log('Received Template ID:', dto.templateId);
+    
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
     });
@@ -24,30 +32,57 @@ export class AppointmentsService {
 
     const end = new Date(start.getTime() + service.durationMin * 60000);
 
-    return this.prisma.appointment.create({
+    const appointment = await this.prisma.appointment.create({
       data: {
         userId,
         serviceId: dto.serviceId,
         startTime: start,
         endTime: end,
-        status: 'PENDING',
+        status: 'CONFIRMED',
       },
       include: {
         service: true,
       },
+    });
+
+    // 1. Priority: templateId from request
+    // 2. Fallback: user's stored selectedTemplateId
+    let finalTemplateId = dto.templateId;
+    
+    if (!finalTemplateId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      finalTemplateId = user?.selectedTemplateId;
+    }
+
+    // Trigger notification
+    await this.notificationsService.sendAppointmentConfirmation(appointment.id, finalTemplateId);
+
+    return this.prisma.appointment.findUnique({
+      where: { id: appointment.id },
+      include: { 
+        service: true, 
+        notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 } 
+      }
     });
   }
 
   async findAll(userId: string, role: string) {
     if (role === Role.ADMIN) {
       return this.prisma.appointment.findMany({
-        include: { service: true, user: { select: { name: true, email: true } } },
+        include: { 
+          service: true, 
+          user: { select: { name: true, email: true } },
+          notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
+        },
         orderBy: { startTime: 'asc' },
       });
     }
     return this.prisma.appointment.findMany({
       where: { userId },
-      include: { service: true },
+      include: { 
+        service: true,
+        notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
+      },
       orderBy: { startTime: 'asc' },
     });
   }
@@ -55,7 +90,11 @@ export class AppointmentsService {
   async findOne(id: string, userId: string, role: string) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
-      include: { service: true, user: { select: { name: true, email: true } } },
+      include: { 
+        service: true, 
+        user: { select: { name: true, email: true } },
+        notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
+      },
     });
 
     if (!appointment) {
@@ -181,5 +220,23 @@ export class AppointmentsService {
     }
 
     return slots;
+  }
+
+  async remove(id: string, userId: string, role: string) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException(`Appointment with ID ${id} not found`);
+    }
+
+    if (role !== Role.ADMIN && appointment.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return this.prisma.appointment.delete({
+      where: { id },
+    });
   }
 }

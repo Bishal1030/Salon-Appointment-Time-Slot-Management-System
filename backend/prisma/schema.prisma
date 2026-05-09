@@ -47,6 +47,9 @@ model User {
   isVerified   Boolean  @default(false)
   verificationToken String?
 
+  selectedTemplateId String?
+  selectedTemplate   NotificationTemplate? @relation(fields: [selectedTemplateId], references: [id])
+
   appointments Appointment[]
 
   createdAt    DateTime @default(now())
@@ -112,6 +115,7 @@ model NotificationTemplate {
   body        String
   isActive    Boolean  @default(true)
   bulkJobs    BulkJob[]
+  users       User[]
 
   createdAt   DateTime @default(now())
 }
