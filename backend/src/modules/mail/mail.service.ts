@@ -40,4 +40,20 @@ export class MailService {
       throw new InternalServerErrorException('Failed to send verification email');
     }
   }
+
+  async sendMail(to: string, subject: string, html: string) {
+    const mailOptions = {
+      from: this.config.get('SMTP_FROM'),
+      to,
+      subject,
+      html,
+    };
+
+    try {
+      await this.transporter.sendMail(mailOptions);
+    } catch (error) {
+      console.error('Error in sendMail:', error);
+      throw new InternalServerErrorException('Failed to send email');
+    }
+  }
 }
