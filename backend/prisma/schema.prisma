@@ -111,6 +111,7 @@ model NotificationTemplate {
   subject     String
   body        String
   isActive    Boolean  @default(true)
+  bulkJobs    BulkJob[]
 
   createdAt   DateTime @default(now())
 }
@@ -140,6 +141,9 @@ model BulkJob {
   failed      Int      @default(0)
 
   status      JobStatus @default(PENDING)
+
+  templateId  String?
+  template    NotificationTemplate? @relation(fields: [templateId], references: [id])
 
   items       BulkJobItem[]
 
