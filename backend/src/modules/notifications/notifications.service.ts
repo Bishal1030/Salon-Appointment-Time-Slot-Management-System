@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { ClientProxy } from '@nestjs/microservices';
-import { JobStatus, NotificationStatus } from '@prisma/client';
+import { JobStatus, NotificationStatus, Role } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 
@@ -116,7 +116,7 @@ export class NotificationsService {
     for (const item of job.items) {
       try {
         const appointmentDate = new Date(item.time);
-        
+
         // Dynamic placeholder replacement
         let renderedBody = job.template.body
           .replace(/{{customerName}}/g, item.email.split('@')[0]) // Fallback if name not in row
@@ -129,7 +129,7 @@ export class NotificationsService {
 
         // Send the actual rendered template email
         await this.mailService.sendMail(item.email, renderedSubject, renderedBody.replace(/\n/g, '<br>'));
-        
+
         await this.updateItemStatus(item.id, NotificationStatus.SENT);
         await this.incrementJobCounter(jobId, 'success');
       } catch (error) {
@@ -151,7 +151,7 @@ export class NotificationsService {
       where: { id },
       data: { status, error },
     });
-    this.gateway.sendNotificationUpdate({ type: 'BULK_ITEM', itemId: id, status, error });
+    this.gateway.sendNotificationUpdate(null, { type: 'BULK_ITEM', itemId: id, status, error });
   }
 
   private async incrementJobCounter(jobId: string, counter: 'processed' | 'success' | 'failed') {
@@ -159,7 +159,7 @@ export class NotificationsService {
       where: { id: jobId },
       data: { [counter]: { increment: 1 } },
     });
-    this.gateway.sendBulkJobUpdate({ jobId, [counter]: job[counter], status: job.status });
+    this.gateway.sendBulkJobUpdate(null, { jobId, [counter]: job[counter], status: job.status });
   }
 
   async getBulkJobStatus(jobId: string) {
@@ -192,12 +192,12 @@ export class NotificationsService {
       },
     });
 
-    // Emit PENDING status to frontend
-    this.gateway.sendNotificationUpdate({ 
-      type: 'SINGLE_APPOINTMENT', 
-      appointmentId: appointment.id, 
+    // 2. Emit PENDING status to frontend
+    this.gateway.sendNotificationUpdate(appointment.userId, {
+      type: 'SINGLE_APPOINTMENT',
+      appointmentId: appointment.id,
       status: NotificationStatus.PENDING,
-      logId: log.id 
+      logId: log.id
     });
 
     try {
@@ -205,7 +205,7 @@ export class NotificationsService {
       if (templateId && templateId.trim()) {
         template = await this.prisma.notificationTemplate.findUnique({ where: { id: templateId } });
       }
-      
+
       if (!template) {
         template = await this.prisma.notificationTemplate.findFirst({ where: { isActive: true } });
       }
@@ -215,7 +215,7 @@ export class NotificationsService {
       }
 
       const appointmentDate = new Date(appointment.startTime);
-      
+
       const renderedBody = template.body
         .replace(/{{customerName}}/g, appointment.user.name)
         .replace(/{{serviceName}}/g, appointment.service.name)
@@ -227,18 +227,18 @@ export class NotificationsService {
         .replace(/{{serviceName}}/g, appointment.service.name);
 
       await this.mailService.sendMail(appointment.user.email, renderedSubject, renderedBody.replace(/\n/g, '<br>'));
-      
+
       //  Update to SENT and emit
       await this.prisma.notificationLog.update({
         where: { id: log.id },
         data: { status: NotificationStatus.SENT },
       });
 
-      this.gateway.sendNotificationUpdate({ 
-        type: 'SINGLE_APPOINTMENT', 
-        appointmentId: appointment.id, 
+      this.gateway.sendNotificationUpdate(appointment.userId, {
+        type: 'SINGLE_APPOINTMENT',
+        appointmentId: appointment.id,
         status: NotificationStatus.SENT,
-        logId: log.id 
+        logId: log.id
       });
 
     } catch (error) {
@@ -248,9 +248,9 @@ export class NotificationsService {
         data: { status: NotificationStatus.FAILED, errorMessage: error.message },
       });
 
-      this.gateway.sendNotificationUpdate({ 
-        type: 'SINGLE_APPOINTMENT', 
-        appointmentId: appointment.id, 
+      this.gateway.sendNotificationUpdate(appointment.userId, {
+        type: 'SINGLE_APPOINTMENT',
+        appointmentId: appointment.id,
         status: NotificationStatus.FAILED,
         logId: log.id,
         error: error.message
@@ -258,8 +258,17 @@ export class NotificationsService {
     }
   }
 
-  async findAllLogs() {
+  async findAllLogs(userId: string, role: string) {
+    const where: any = {};
+
+    if (role !== Role.ADMIN) {
+      where.appointment = {
+        userId: userId
+      };
+    }
+
     return this.prisma.notificationLog.findMany({
+      where,
       include: {
         appointment: {
           include: {

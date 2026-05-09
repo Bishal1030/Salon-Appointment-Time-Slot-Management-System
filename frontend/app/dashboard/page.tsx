@@ -29,9 +29,23 @@ export default function DashboardPage() {
 
   // WebSocket Setup
   useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    let userId = '';
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        userId = user.userId;
+      } catch (e) {}
+    }
+
     const socket = io('http://localhost:3001/notifications');
     
-    socket.on('connect', () => console.log('Connected to real-time feed'));
+    socket.on('connect', () => {
+      console.log('Connected to real-time feed');
+      if (userId) {
+        socket.emit('subscribe', { userId });
+      }
+    });
     
     socket.on('notification_status', (data) => {
       console.log('Real-time notification update:', data);

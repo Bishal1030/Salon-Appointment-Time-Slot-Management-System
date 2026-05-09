@@ -108,7 +108,7 @@ export class NotificationsController {
 
   @Get('logs')
   @ApiOperation({ summary: 'Get all notification logs' })
-  findAllLogs() {
-    return this.notificationsService.findAllLogs();
+  findAllLogs(@Req() req: any) {
+    return this.notificationsService.findAllLogs(req.user.userId, req.user.role);
   }
 }

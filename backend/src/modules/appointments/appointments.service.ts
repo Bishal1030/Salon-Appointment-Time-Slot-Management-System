@@ -11,12 +11,12 @@ export class AppointmentsService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   async create(userId: string, dto: CreateAppointmentDto) {
     console.log('--- APPOINTMENT CREATION DEBUG ---');
     console.log('Received Template ID:', dto.templateId);
-    
+
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
     });
@@ -48,7 +48,7 @@ export class AppointmentsService {
     // 1. Priority: templateId from request
     // 2. Fallback: user's stored selectedTemplateId
     let finalTemplateId = dto.templateId;
-    
+
     if (!finalTemplateId) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       finalTemplateId = user?.selectedTemplateId;
@@ -59,9 +59,9 @@ export class AppointmentsService {
 
     return this.prisma.appointment.findUnique({
       where: { id: appointment.id },
-      include: { 
-        service: true, 
-        notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 } 
+      include: {
+        service: true,
+        notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
       }
     });
   }
@@ -69,8 +69,8 @@ export class AppointmentsService {
   async findAll(userId: string, role: string) {
     if (role === Role.ADMIN) {
       return this.prisma.appointment.findMany({
-        include: { 
-          service: true, 
+        include: {
+          service: true,
           user: { select: { name: true, email: true } },
           notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
         },
@@ -79,7 +79,7 @@ export class AppointmentsService {
     }
     return this.prisma.appointment.findMany({
       where: { userId },
-      include: { 
+      include: {
         service: true,
         notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
       },
@@ -90,8 +90,8 @@ export class AppointmentsService {
   async findOne(id: string, userId: string, role: string) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id },
-      include: { 
-        service: true, 
+      include: {
+        service: true,
         user: { select: { name: true, email: true } },
         notificationLogs: { orderBy: { createdAt: 'desc' }, take: 1 }
       },
@@ -126,12 +126,12 @@ export class AppointmentsService {
     if (dto.startTime || dto.serviceId) {
       const serviceId = dto.serviceId || appointment.serviceId;
       const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
-      
+
       if (!service) throw new NotFoundException('Service not found');
 
       const start = new Date(dto.startTime || appointment.startTime);
       const end = new Date(start.getTime() + service.durationMin * 60000);
-      
+
       updateData.startTime = start;
       updateData.endTime = end;
     }
@@ -179,7 +179,7 @@ export class AppointmentsService {
     const slots: { start: string; end: string }[] = [];
     let current = new Date(date);
     current.setUTCHours(workingHours.startTime.getUTCHours(), workingHours.startTime.getUTCMinutes(), 0, 0);
-    
+
     const dayEnd = new Date(date);
     dayEnd.setUTCHours(workingHours.endTime.getUTCHours(), workingHours.endTime.getUTCMinutes(), 0, 0);
 
@@ -196,7 +196,7 @@ export class AppointmentsService {
       }
 
       // Check overlap with appointments
-      const isBooked = appointments.some(app => 
+      const isBooked = appointments.some(app =>
         (slotStart < app.endTime && slotEnd > app.startTime)
       );
 
