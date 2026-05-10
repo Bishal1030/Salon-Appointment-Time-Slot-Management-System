@@ -273,11 +273,14 @@ export default function DashboardPage() {
                         <button
                           key={slot.start}
                           type="button"
+                          disabled={slot.isBooked}
                           onClick={() => setSelectedSlot(slot.start)}
                           className={`h-10 text-[10px] font-bold border-2 transition-all ${
-                            selectedSlot === slot.start
-                              ? 'bg-black text-white border-black' 
-                              : 'border-zinc-200 hover:border-black'
+                            slot.isBooked
+                              ? 'bg-zinc-100 border-zinc-200 text-zinc-300 cursor-not-allowed line-through'
+                              : selectedSlot === slot.start
+                                ? 'bg-black text-white border-black' 
+                                : 'bg-white border-zinc-200 hover:border-black text-black'
                           }`}
                         >
                           {timeStr}
