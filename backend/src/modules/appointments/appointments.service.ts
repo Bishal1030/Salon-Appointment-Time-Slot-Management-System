@@ -32,6 +32,21 @@ export class AppointmentsService {
 
     const end = new Date(start.getTime() + service.durationMin * 60000);
 
+    // Overlap check to prevent double-booking
+    const overlapping = await this.prisma.appointment.findFirst({
+      where: {
+        status: { not: 'CANCELLED' },
+        AND: [
+          { startTime: { lt: end } },
+          { endTime: { gt: start } }
+        ]
+      }
+    });
+
+    if (overlapping) {
+      throw new BadRequestException('This time slot is already booked.');
+    }
+
     const appointment = await this.prisma.appointment.create({
       data: {
         userId,
@@ -132,6 +147,22 @@ export class AppointmentsService {
       const start = new Date(dto.startTime || appointment.startTime);
       const end = new Date(start.getTime() + service.durationMin * 60000);
 
+      // Overlap check (excluding self)
+      const overlapping = await this.prisma.appointment.findFirst({
+        where: {
+          id: { not: id },
+          status: { not: 'CANCELLED' },
+          AND: [
+            { startTime: { lt: end } },
+            { endTime: { gt: start } }
+          ]
+        }
+      });
+
+      if (overlapping) {
+        throw new BadRequestException('This time slot is already booked.');
+      }
+
       updateData.startTime = start;
       updateData.endTime = end;
     }
@@ -150,14 +181,14 @@ export class AppointmentsService {
     const date = new Date(dateStr);
     const dayOfWeek = date.getUTCDay();
 
-    // 1. Get working hours for the day
+    //  Get working hours for the day
     const workingHours = await this.prisma.workingHour.findFirst({
       where: { dayOfWeek, isActive: true },
     });
 
     if (!workingHours) return [];
 
-    // 2. Get existing appointments and breaks for the day
+    // Get existing appointments and breaks for the day
     const now = new Date();
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0, 0, 0, 0);
@@ -175,7 +206,7 @@ export class AppointmentsService {
       where: { isActive: true },
     });
 
-    // 3. Generate slots
+    // Generate slots
     const slots: { start: string; end: string }[] = [];
     let current = new Date(date);
     current.setUTCHours(workingHours.startTime.getUTCHours(), workingHours.startTime.getUTCMinutes(), 0, 0);
@@ -183,22 +214,19 @@ export class AppointmentsService {
     const dayEnd = new Date(date);
     dayEnd.setUTCHours(workingHours.endTime.getUTCHours(), workingHours.endTime.getUTCMinutes(), 0, 0);
 
-    const slotDuration = 30; // 30 min intervals for slot starts
+    const slotDuration = 30; // Hardcoded 30 min intervals for slot starts
 
     while (current.getTime() + service.durationMin * 60000 <= dayEnd.getTime()) {
       const slotStart = new Date(current);
       const slotEnd = new Date(current.getTime() + service.durationMin * 60000);
 
-      // Skip slots that are in the past
-      if (slotStart < now) {
-        current = new Date(current.getTime() + slotDuration * 60000);
-        continue;
-      }
-
       // Check overlap with appointments
       const isBooked = appointments.some(app =>
         (slotStart < app.endTime && slotEnd > app.startTime)
       );
+
+      // Check if slot is in the past
+      const isPast = slotStart < now;
 
       // Check overlap with breaks
       const isOnBreak = breaks.some(brk => {
@@ -209,11 +237,12 @@ export class AppointmentsService {
         return (slotStart < bEnd && slotEnd > bStart);
       });
 
-      if (!isBooked && !isOnBreak) {
+      if (!isOnBreak) {
         slots.push({
           start: slotStart.toISOString(),
           end: slotEnd.toISOString(),
-        });
+          isBooked: isBooked || isPast,
+        } as any);
       }
 
       current = new Date(current.getTime() + slotDuration * 60000);
