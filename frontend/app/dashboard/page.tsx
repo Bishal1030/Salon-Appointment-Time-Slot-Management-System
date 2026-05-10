@@ -5,7 +5,8 @@ import { appointmentService, CreateAppointmentDto } from '@/services/appointment
 import { servicesService, Service } from '@/services/services.service';
 import { Button } from '@/components/retroui/Button';
 import { Input } from '@/components/retroui/Input';
-import { Plus, Calendar, Clock, Scissors, RefreshCw, ChevronRight, Trash2, Edit2, Activity, MailCheck, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Calendar, Clock, Scissors, RefreshCw, ChevronRight, Trash2, Edit2, Activity, MailCheck, AlertCircle, Upload } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { io } from 'socket.io-client';
 import { notificationService } from '@/services/notification.service';
@@ -13,10 +14,20 @@ import { notificationService } from '@/services/notification.service';
 export default function DashboardPage() {
   const { mutate } = useSWRConfig();
   
-  // SWR Fetches
-  const { data: appointments = [], isLoading: apptsLoading } = useSWR('appointments', () => appointmentService.getAll());
+  // SWR for initial data fetch
+  const { data: appointments = [], mutate: mutateAppts, isLoading: apptsLoading } = useSWR('appointments', () => appointmentService.getAll());
   const { data: services = [], isLoading: svcsLoading } = useSWR('services', () => servicesService.getAll());
-  const { data: logs = [], isLoading: logsLoading } = useSWR('notification_logs', () => notificationService.getLogs());
+  const { data: fetchedLogs = [], isLoading: logsLoading } = useSWR('notification_logs', () => notificationService.getLogs());
+
+  // Live logs state — updated directly by socket (guaranteed re-render)
+  const [liveLogs, setLiveLogs] = useState<any[]>([]);
+
+  // Sync SWR data into liveLogs once loaded
+  useEffect(() => {
+    if (fetchedLogs.length > 0) {
+      setLiveLogs(fetchedLogs);
+    }
+  }, [fetchedLogs]);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -27,23 +38,83 @@ export default function DashboardPage() {
   const [selectedSlot, setSelectedSlot] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
-  // WebSocket Setup
+  // WebSocket Setup — uses setLiveLogs directly, no SWR cache issues
   useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    let userId = '';
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        userId = user.userId;
+      } catch (e) {}
+    }
+
     const socket = io('http://localhost:3001/notifications');
     
-    socket.on('connect', () => console.log('Connected to real-time feed'));
-    
-    socket.on('notification_status', (data) => {
-      console.log('Real-time notification update:', data);
-      // Revalidate appointments and logs
-      mutate('appointments');
-      mutate('notification_logs');
+    socket.on('connect', () => {
+      console.log('Connected to real-time feed');
+      if (userId) {
+        socket.emit('subscribe', { userId });
+        console.log('Subscribed to room:', userId);
+      }
     });
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [mutate]);
+    socket.on('notification_status', (data) => {
+      console.log('🔔 Socket event received:', data);
+
+      if (data.type === 'SINGLE_APPOINTMENT') {
+        setLiveLogs(prev => {
+          const existsIndex = prev.findIndex(l =>
+            l.id === data.logId ||
+            (l.id?.startsWith('temp-') && l.email?.toLowerCase() === data.email?.toLowerCase())
+          );
+
+          if (existsIndex > -1) {
+            // Update existing entry
+            const updated = [...prev];
+            updated[existsIndex] = {
+              ...updated[existsIndex],
+              id: data.logId,
+              status: data.status,
+            };
+            console.log(' Updated existing log to', data.status);
+            return updated;
+          } else if (data.status === 'PENDING') {
+            // Add new PENDING entry
+            console.log('Adding new PENDING log');
+            return [{
+              id: data.logId,
+              email: data.email,
+              status: 'PENDING',
+              createdAt: data.createdAt,
+              appointment: { service: { name: data.serviceName } }
+            }, ...prev];
+          }
+          return prev;
+        });
+
+        // Also update appointments badge
+        mutateAppts((currentAppts: any[] = []) => {
+          return currentAppts.map(appt => {
+            if (appt.id === data.appointmentId) {
+              return { ...appt, notificationLogs: [{ status: data.status }] };
+            }
+            return appt;
+          });
+        }, false);
+
+        // Re-fetch from DB after terminal state
+        if (data.status === 'SENT' || data.status === 'FAILED') {
+          setTimeout(() => {
+            mutateAppts();
+            mutate('notification_logs');
+          }, 1500);
+        }
+      }
+    });
+
+    return () => { socket.disconnect(); };
+  }, []);
 
   useEffect(() => {
     if (selectedService && selectedDate) {
@@ -65,25 +136,29 @@ export default function DashboardPage() {
     e.preventDefault();
     setFormLoading(true);
     try {
-      if (editingId) {
-        await appointmentService.update(editingId, {
-          serviceId: selectedService,
-          startTime: selectedSlot
-        });
-      } else {
-        await appointmentService.create({
-          serviceId: selectedService,
-          appointmentDate: selectedDate,
-          startTime: selectedSlot
-        });
+      // Optimistically show a PENDING log immediately
+      if (!editingId) {
+        const userEmail = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}').email || ''; } catch { return ''; } })();
+        const tempLog = {
+          id: `temp-${Date.now()}`,
+          email: userEmail,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          appointment: { service: { name: services.find(s => s.id === selectedService)?.name || 'Service' } }
+        };
+        setLiveLogs(prev => [tempLog, ...prev]);
       }
+
+      if (editingId) {
+        await appointmentService.update(editingId, { serviceId: selectedService, startTime: selectedSlot });
+      } else {
+        await appointmentService.create({ serviceId: selectedService, appointmentDate: selectedDate, startTime: selectedSlot });
+      }
+
       setShowForm(false);
       setEditingId(null);
       resetForm();
-      
-      // Trigger SWR revalidation
-      mutate('appointments');
-      mutate('notification_logs');
+      mutateAppts();
     } catch (err) {
       console.error(err);
     } finally {
@@ -131,17 +206,17 @@ export default function DashboardPage() {
             <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">Schedule<br/>Management</h1>
             <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-zinc-400">System Identity: Terminal_01</p>
           </div>
-          <Button 
-            onClick={() => {
-              if (showForm) resetForm();
-              setShowForm(!showForm);
-            }} 
-            className="h-14 text-xs tracking-widest rounded-none"
-            style={{ paddingLeft: '3rem', paddingRight: '3rem' }}
-            variant={showForm ? 'secondary' : 'default'}
-          >
-            {showForm ? 'CLOSE PORTAL' : 'ADD APPOINTMENT'}
-          </Button>
+            <Button 
+              onClick={() => {
+                if (showForm) resetForm();
+                setShowForm(!showForm);
+              }} 
+              className="h-14 text-xs tracking-widest rounded-none"
+              style={{ paddingLeft: '3rem', paddingRight: '3rem' }}
+              variant={showForm ? 'secondary' : 'default'}
+            >
+              {showForm ? 'CLOSE PORTAL' : 'ADD APPOINTMENT'}
+            </Button>
         </div>
 
         {/* Action Panel: Form */}
@@ -314,19 +389,19 @@ export default function DashboardPage() {
 
         {/* Transmission Logs Section */}
         <div className="space-y-8 pb-20">
-          <div className="flex items-center justify-between border-b border-zinc-100 pb-4">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-3 text-zinc-400">
+          <div className="flex items-center justify-between border-b border-zinc-100 pb-4 text-zinc-400">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-3">
               <Activity className="w-4 h-4" /> Transmission Logs
             </h2>
           </div>
 
-          {logs.length === 0 ? (
+          {liveLogs.length === 0 ? (
             <div className="text-center py-10 text-[10px] font-bold uppercase tracking-widest text-zinc-300">
               No Transmission History Detected
             </div>
           ) : (
             <div className="space-y-4">
-              {logs.map((log: any) => (
+              {liveLogs.map((log: any) => (
                 <div key={log.id} className="border-2 border-zinc-100 p-4 flex items-center justify-between group hover:border-black transition-all">
                   <div className="flex items-center gap-4">
                     <div className={`p-2 rounded-none ${

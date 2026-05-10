@@ -28,4 +28,19 @@ export const notificationService = {
     const { data } = await api.get('/notifications/logs');
     return data;
   },
+
+  async uploadBulk(templateId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('templateId', templateId);
+    formData.append('file', file);
+    const { data } = await api.post('/notifications/bulk', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  async getBulkJobStatus(jobId: string): Promise<any> {
+    const { data } = await api.get(`/notifications/bulk/${jobId}`);
+    return data;
+  },
 };

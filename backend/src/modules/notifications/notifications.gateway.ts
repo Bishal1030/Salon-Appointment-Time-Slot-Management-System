@@ -3,8 +3,11 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
 } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
   cors: {
@@ -16,19 +19,35 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   @WebSocketServer()
   server: Server;
 
-  handleConnection(client: any) {
+  handleConnection(client: Socket) {
     console.log('Client connected to notifications gateway:', client.id);
   }
 
-  handleDisconnect(client: any) {
+  handleDisconnect(client: Socket) {
     console.log('Client disconnected from notifications gateway:', client.id);
   }
 
-  sendNotificationUpdate(data: any) {
-    this.server.emit('notification_status', data);
+  @SubscribeMessage('subscribe')
+  handleSubscribe(@ConnectedSocket() client: Socket, @MessageBody() data: { userId: string }) {
+    if (data.userId) {
+      console.log(`Client ${client.id} subscribing to user room: ${data.userId}`);
+      client.join(data.userId);
+    }
   }
 
-  sendBulkJobUpdate(data: any) {
-    this.server.emit('bulk_job_status', data);
+  sendNotificationUpdate(userId: string | null, data: any) {
+    if (userId) {
+      this.server.to(userId).emit('notification_status', data);
+    } else {
+      this.server.emit('notification_status', data); // Fallback to broadcast
+    }
+  }
+
+  sendBulkJobUpdate(userId: string | null, data: any) {
+    if (userId) {
+      this.server.to(userId).emit('bulk_job_status', data);
+    } else {
+      this.server.emit('bulk_job_status', data); // Fallback to broadcast
+    }
   }
 }
