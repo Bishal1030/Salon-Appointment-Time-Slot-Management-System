@@ -26,6 +26,7 @@ export default function BulkUploadPage() {
   const [uploading, setUploading] = useState(false);
   const [activeJobs, setActiveJobs] = useState<BulkJob[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const userStr = localStorage.getItem('user');
@@ -75,14 +76,19 @@ export default function BulkUploadPage() {
     e.preventDefault();
     if (!selectedTemplate || !file) return;
 
+    setErrorMsg(null);
     setUploading(true);
     try {
       await notificationService.uploadBulk(selectedTemplate, file);
       setFile(null);
-      alert('Bulk processing initialized successfully.');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Upload failed:', err);
-      alert('Upload failed. Please check the file format and try again.');
+      // Extract the error message from the backend response (Axios)
+      const backendMessage = typeof err.response?.data === 'string' 
+        ? err.response?.data 
+        : err.response?.data?.message;
+        
+      setErrorMsg(backendMessage || err.message || 'Upload failed.');
     } finally {
       setUploading(false);
     }
@@ -145,7 +151,7 @@ export default function BulkUploadPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-4">
+              <div className="flex flex-col items-end pt-4 space-y-4">
                 <Button 
                   type="submit" 
                   disabled={uploading || !file || !selectedTemplate}
@@ -153,6 +159,11 @@ export default function BulkUploadPage() {
                 >
                   {uploading ? '...' : 'EXECUTE'}
                 </Button>
+                {errorMsg && (
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-500">
+                    {errorMsg}
+                  </p>
+                )}
               </div>
             </div>
           </form>
