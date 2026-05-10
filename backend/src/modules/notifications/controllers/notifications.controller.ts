@@ -62,28 +62,24 @@ export class NotificationsController {
     try {
       fileUrl = await this.notificationsService.uploadToCloudinary(file.buffer, file.originalname);
     } catch (error) {
+      console.error('Cloudinary upload failed:', error);
       throw new BadRequestException(`Cloudinary upload failed: ${error.message}`);
     }
 
-    // Parse Excel
+    // Parse Excel — no strict validation, let the processor handle bad rows
     const workbook = xlsx.read(file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json(sheet);
+    const rows: any[] = xlsx.utils.sheet_to_json(sheet);
 
-    const validatedItems: BulkAppointmentRowDto[] = [];
-
-    for (const row of rows) {
-      const item = plainToInstance(BulkAppointmentRowDto, row);
-      const errors = await validate(item);
-      if (errors.length > 0) {
-        throw new BadRequestException(`Validation failed for row: ${JSON.stringify(row)}`);
-      }
-      validatedItems.push(item);
-    }
+    const items = rows.map((row) => ({
+      email: String(row.email || ''),
+      service: String(row.service || row.serviceName || ''),
+      time: String(row.time || row.appointmentDate || ''),
+    }));
 
     // Create Bulk Job
-    return this.notificationsService.createBulkJob(file.originalname, fileUrl, validatedItems, templateId);
+    return this.notificationsService.createBulkJob(file.originalname, fileUrl, items, templateId);
   }
 
   @Get('bulk/:jobId')

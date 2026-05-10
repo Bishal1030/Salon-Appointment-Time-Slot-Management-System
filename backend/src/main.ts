@@ -12,6 +12,7 @@ async function bootstrap() {
 
   app.useGlobalPipes(new ValidationPipe());
   app.enableCors();
+  app.setGlobalPrefix('api');
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
@@ -36,7 +37,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('docs', app, document);
 
   await app.startAllMicroservices();
   await app.listen(configService.get('PORT') ?? 3001);

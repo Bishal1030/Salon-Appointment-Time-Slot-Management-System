@@ -54,8 +54,8 @@ export class AppointmentsService {
       finalTemplateId = user?.selectedTemplateId;
     }
 
-    // Trigger notification
-    await this.notificationsService.sendAppointmentConfirmation(appointment.id, finalTemplateId);
+    // Trigger notification in background (don't await)
+    this.notificationsService.sendAppointmentConfirmation(appointment.id, finalTemplateId);
 
     return this.prisma.appointment.findUnique({
       where: { id: appointment.id },

@@ -80,15 +80,20 @@ export class NotificationsService {
       },
     });
 
-    // Create all items in bulk
+    // Create all items in bulk with safety fallbacks
     await this.prisma.bulkJobItem.createMany({
-      data: items.map((item) => ({
-        jobId: job.id,
-        email: item.email,
-        service: item.service,
-        time: new Date(item.time),
-        status: NotificationStatus.PENDING,
-      })),
+      data: items.map((item) => {
+        const date = new Date(item.time);
+        const isValidDate = !isNaN(date.getTime());
+        
+        return {
+          jobId: job.id,
+          email: item.email || 'missing-email',
+          service: item.service || 'unknown-service',
+          time: isValidDate ? date : new Date(0), // Fallback to epoch if invalid
+          status: NotificationStatus.PENDING,
+        };
+      }),
     });
 
     // Emit event to RabbitMQ for background processing
@@ -115,7 +120,15 @@ export class NotificationsService {
 
     for (const item of job.items) {
       try {
+        // Validation check for messy data
+        if (!item.email || !item.service || !item.time) {
+          throw new Error('Missing required fields (email, service, or time)');
+        }
+
         const appointmentDate = new Date(item.time);
+        if (isNaN(appointmentDate.getTime())) {
+          throw new Error('Invalid date format');
+        }
 
         // Dynamic placeholder replacement
         let renderedBody = job.template.body
@@ -151,7 +164,14 @@ export class NotificationsService {
       where: { id },
       data: { status, error },
     });
-    this.gateway.sendNotificationUpdate(null, { type: 'BULK_ITEM', itemId: id, status, error });
+    this.gateway.sendNotificationUpdate(null, { 
+      type: 'BULK_ITEM', 
+      itemId: id, 
+      status, 
+      error,
+      email: item.email,
+      jobId: item.jobId 
+    });
   }
 
   private async incrementJobCounter(jobId: string, counter: 'processed' | 'success' | 'failed') {
@@ -159,7 +179,14 @@ export class NotificationsService {
       where: { id: jobId },
       data: { [counter]: { increment: 1 } },
     });
-    this.gateway.sendBulkJobUpdate(null, { jobId, [counter]: job[counter], status: job.status });
+    this.gateway.sendBulkJobUpdate(null, { 
+      jobId, 
+      processed: job.processed,
+      successful: job.success,
+      failed: job.failed,
+      total: job.totalRows,
+      status: job.status 
+    });
   }
 
   async getBulkJobStatus(jobId: string) {
@@ -197,7 +224,10 @@ export class NotificationsService {
       type: 'SINGLE_APPOINTMENT',
       appointmentId: appointment.id,
       status: NotificationStatus.PENDING,
-      logId: log.id
+      logId: log.id,
+      email: appointment.user.email,
+      serviceName: appointment.service.name,
+      createdAt: log.createdAt
     });
 
     try {
@@ -242,7 +272,7 @@ export class NotificationsService {
       });
 
     } catch (error) {
-      // 4. Update to FAILED and emit
+      // Update to FAILED and emit
       await this.prisma.notificationLog.update({
         where: { id: log.id },
         data: { status: NotificationStatus.FAILED, errorMessage: error.message },
