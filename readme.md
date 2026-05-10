@@ -16,6 +16,7 @@ A full-stack, enterprise-grade application designed to streamline salon operatio
 ## 🏗️ System Design & Architecture
 
 > *Note: This section outlines the high-level architecture of the system.*
+> 
 > <img width="1774" height="1378" alt="image" src="https://github.com/user-attachments/assets/f33b635c-5d58-412f-9d8a-7019229815e0" />
 
 
