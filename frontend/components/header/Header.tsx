@@ -8,12 +8,25 @@ import { LogOut, User, Mail } from 'lucide-react';
 
 export default function Header() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     setIsLoggedIn(!!token);
+    
+    if (token) {
+      try {
+        // Decode JWT payload to get the role securely
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setIsAdmin(payload.role === 'ADMIN');
+      } catch (e) {
+        setIsAdmin(false);
+      }
+    } else {
+      setIsAdmin(false);
+    }
   }, [pathname]);
 
   const handleLogout = () => {
@@ -37,13 +50,15 @@ export default function Header() {
 
         {isLoggedIn && (
           <div className="hidden md:flex items-center gap-6">
-            <Link 
-              href="/dashboard/bulk"
-              className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] hover:text-zinc-500 transition-colors"
-            >
-              <Mail className="w-3 h-3" />
-              <span>Bulk Upload</span>
-            </Link>
+            {isAdmin && (
+              <Link 
+                href="/dashboard/bulk"
+                className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] hover:text-zinc-500 transition-colors"
+              >
+                <Mail className="w-3 h-3" />
+                <span>Bulk Upload</span>
+              </Link>
+            )}
             <Link 
               href="/dashboard/templates"
               className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] hover:text-zinc-500 transition-colors"

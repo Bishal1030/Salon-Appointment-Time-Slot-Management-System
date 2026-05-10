@@ -7,10 +7,13 @@ import * as xlsx from 'xlsx';
 import { BulkAppointmentRowDto } from '../dto/bulk-appointment.dto';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
 @ApiTags('notifications')
 @Controller('notifications')
-@UseGuards(JwtGuard)
+@UseGuards(JwtGuard, RolesGuard)
 @ApiBearerAuth()
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) { }
@@ -31,6 +34,7 @@ export class NotificationsController {
   }
 
   @Post('bulk')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Upload Excel file for bulk appointment notifications' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -83,6 +87,7 @@ export class NotificationsController {
   }
 
   @Get('bulk/:jobId')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Check status of a bulk notification job' })
   @ApiResponse({ status: 200, description: 'Returns the job status and items' })
   @ApiResponse({ status: 404, description: 'Job not found' })
