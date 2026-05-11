@@ -57,7 +57,8 @@ export class NotificationsService {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           resource_type: 'raw',
-          public_id: `bulk-notifications/${Date.now()}-${originalName}`,
+          folder: 'bulk-appointment',
+          public_id: `${Date.now()}-${originalName}`,
         },
         (error, result) => {
           if (error) return reject(error);
