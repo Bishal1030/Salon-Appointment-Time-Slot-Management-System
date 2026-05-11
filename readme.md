@@ -81,6 +81,22 @@ A full-stack, enterprise-grade application designed to streamline salon operatio
 - RabbitMQ
 - pnpm (for frontend and backend)
 
+### RabbitMQ Setup (Docker)
+A `docker-compose.yml` file is provided at the root of the project to spin up RabbitMQ instantly.
+
+1. Make sure your `.env` file has the RabbitMQ credentials set:
+```env
+   RABBITMQ_USER=guest
+   RABBITMQ_PASS=guest
+```
+2. Start the RabbitMQ container:
+```bash
+   docker-compose up -d
+```
+3. The following ports will be available:
+   - `5672` — AMQP connection (used by the backend)
+   - `15672` — Management UI at `http://localhost:15672`
+
 ### Backend Setup
 1. Navigate to the backend directory: `cd backend`
 2. Install dependencies: `pnpm install`
