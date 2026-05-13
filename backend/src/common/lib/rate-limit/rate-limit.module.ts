@@ -13,7 +13,7 @@ export const standardLimiter = rateLimit({
 // Bulk Notification Limiter 
 export const bulkNotificationLimiter = rateLimit({
   windowMs: 4 * 60 * 1000, // 4 minutes
-  limit: 1,
+  limit: 2,
   message: 'Bulk limit reached. Please wait 4 minutes.',
   standardHeaders: 'draft-8',
   legacyHeaders: false,

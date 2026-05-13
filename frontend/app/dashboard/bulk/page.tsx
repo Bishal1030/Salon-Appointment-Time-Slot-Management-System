@@ -44,28 +44,49 @@ export default function BulkUploadPage() {
       }
     });
 
+    // Note: We are no longer fetching existing jobs on mount to keep the UI clean 
+    // and focused only on current active tasks.
+    setActiveJobs([]);
+
     socket.on('bulk_job_status', (data) => {
       console.log('📦 Bulk Job Update:', data);
       setActiveJobs(prev => {
         const existsIndex = prev.findIndex(j => j.jobId === data.jobId);
+        const updatedJob = {
+          jobId: data.jobId,
+          total: data.total,
+          processed: data.processed,
+          successful: data.successful || data.success, // Handle both naming conventions
+          failed: data.failed,
+          status: data.status
+        };
+
         if (existsIndex > -1) {
           const updated = [...prev];
-          updated[existsIndex] = { ...updated[existsIndex], ...data };
+          updated[existsIndex] = { ...updated[existsIndex], ...updatedJob };
           return updated;
         }
-        return [data, ...prev];
+        return [updatedJob, ...prev];
       });
     });
 
     socket.on('notification_status', (data) => {
       if (data.type === 'BULK_ITEM') {
-        console.log('📄 Bulk Item Update:', data);
-        setLogs(prev => [{
-          id: data.itemId,
-          status: data.status,
-          error: data.error,
-          createdAt: new Date().toISOString()
-        }, ...prev].slice(0, 50)); // Keep last 50 logs
+        setLogs(prev => {
+          // Check if this specific log update already exists to avoid duplicates
+          const exists = prev.find(l => l.id === data.itemId && l.status === data.status);
+          if (exists) return prev;
+
+          const newLog = {
+            id: data.itemId,
+            status: data.status,
+            error: data.error,
+            email: data.email,
+            createdAt: new Date().toISOString()
+          };
+          
+          return [newLog, ...prev].slice(0, 50);
+        });
       }
     });
 
@@ -175,34 +196,48 @@ export default function BulkUploadPage() {
             </div>
 
             <div className="space-y-12">
-              {activeJobs.length > 0 && activeJobs.map((job) => (
-                <div key={job.jobId} className="space-y-4">
-                  <div className="flex items-center justify-between font-black uppercase text-[10px]">
-                    <span className="tracking-tighter">Sequence_{job.jobId.slice(-6)}</span>
-                    <span className="text-zinc-400">{Math.round((job.processed / job.total) * 100)}%</span>
-                  </div>
-                  <div className="w-full h-3 border-2 border-black p-0.5 bg-white">
-                    <div 
-                      className="h-full bg-black transition-all duration-700 ease-out" 
-                      style={{ width: `${(job.processed / job.total) * 100}%` }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-10 text-[9px] font-black uppercase">
-                    <div className="space-y-1">
-                      <p className="text-zinc-300 text-[8px]">Processed</p>
-                      <p>{job.processed} / {job.total}</p>
+              {activeJobs.length > 0 && activeJobs
+                .filter((job, index, self) => {
+                  // Show all PENDING/PROCESSING jobs
+                  if (job.status === 'PENDING' || job.status === 'PROCESSING') return true;
+                  // Show only top 2 COMPLETED/FAILED jobs to keep list clean
+                  const completedIndices = self
+                    .map((j, i) => (j.status === 'COMPLETED' || j.status === 'FAILED' ? i : -1))
+                    .filter(i => i !== -1);
+                  return completedIndices.slice(0, 2).includes(index);
+                })
+                .map((job) => {
+                  const progress = Math.min(Math.round((job.processed / job.total) * 100), 100);
+                  
+                  return (
+                    <div key={job.jobId} className="space-y-4">
+                      <div className="flex items-center justify-between font-black uppercase text-[10px]">
+                        <span className="tracking-tighter">Sequence_{job.jobId.slice(-6)}</span>
+                        <span className="text-zinc-400">{progress}%</span>
+                      </div>
+                      <div className="w-full h-3 border-2 border-black p-0.5 bg-white">
+                        <div 
+                          className="h-full bg-black transition-all duration-700 ease-out" 
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-10 text-[9px] font-black uppercase">
+                        <div className="space-y-1">
+                          <p className="text-zinc-300 text-[8px]">Processed</p>
+                          <p>{job.processed} / {job.total}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-zinc-300 text-[8px]">Success</p>
+                          <p className="text-green-600">{job.successful}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-zinc-300 text-[8px]">Failed</p>
+                          <p className="text-red-500">{job.failed}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-zinc-300 text-[8px]">Success</p>
-                      <p className="text-green-600">{job.successful}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-zinc-300 text-[8px]">Failed</p>
-                      <p className="text-red-500">{job.failed}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
             </div>
           </div>
 
