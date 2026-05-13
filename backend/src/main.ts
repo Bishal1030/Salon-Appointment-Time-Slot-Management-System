@@ -24,6 +24,10 @@ async function bootstrap() {
       queueOptions: {
         durable: true,
       },
+      // Bind queue to default exchange with routing key matching queue name
+      prefetchCount: 1, // Process one message at a time
+      noAck: false, // Acknowledge messages after processing
+      isGlobal: false,
     },
   });
 

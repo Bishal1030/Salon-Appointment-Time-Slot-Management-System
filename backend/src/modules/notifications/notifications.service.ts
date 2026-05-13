@@ -98,7 +98,7 @@ export class NotificationsService {
     });
 
     // Emit event to RabbitMQ for background processing
-    this.rmqClient.emit('bulk_notify', { jobId: job.id });
+    this.rmqClient.emit('bulk_notifications', { jobId: job.id });
 
     return job;
   }
@@ -110,7 +110,7 @@ export class NotificationsService {
     });
 
     if (!job || !job.template) {
-      console.error(`Job ${jobId} or its template not found`);
+      throw new Error(`Job ${jobId} or its template not found`);
       return;
     }
 
