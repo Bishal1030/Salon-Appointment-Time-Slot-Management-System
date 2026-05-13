@@ -116,8 +116,17 @@ export class NotificationsService {
 
     await this.prisma.bulkJob.update({
       where: { id: jobId },
-      data: { status: JobStatus.PROCESSING },
+      data: { 
+        status: JobStatus.PROCESSING,
+        processed: 0,
+        success: 0,
+        failed: 0
+      },
     });
+
+    let processedCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
 
     for (const item of job.items) {
       try {
@@ -145,18 +154,42 @@ export class NotificationsService {
         await this.mailService.sendMail(item.email, renderedSubject, renderedBody.replace(/\n/g, '<br>'));
 
         await this.updateItemStatus(item.id, NotificationStatus.SENT);
-        await this.incrementJobCounter(jobId, 'success');
+        successCount++;
       } catch (error) {
         await this.updateItemStatus(item.id, NotificationStatus.FAILED, error.message);
-        await this.incrementJobCounter(jobId, 'failed');
+        failedCount++;
       } finally {
-        await this.incrementJobCounter(jobId, 'processed');
+        processedCount++;
+        // Emit real-time update via socket using in-memory counters
+        this.gateway.sendBulkJobUpdate(null, { 
+          jobId, 
+          processed: processedCount,
+          successful: successCount,
+          failed: failedCount,
+          total: job.items.length,
+          status: JobStatus.PROCESSING 
+        });
       }
     }
 
     await this.prisma.bulkJob.update({
       where: { id: jobId },
-      data: { status: JobStatus.COMPLETED },
+      data: { 
+        status: JobStatus.COMPLETED,
+        processed: processedCount,
+        success: successCount,
+        failed: failedCount
+      },
+    });
+
+    // Final update for completed status
+    this.gateway.sendBulkJobUpdate(null, { 
+      jobId, 
+      processed: processedCount,
+      successful: successCount,
+      failed: failedCount,
+      total: job.items.length,
+      status: JobStatus.COMPLETED 
     });
   }
 
@@ -174,22 +207,6 @@ export class NotificationsService {
       jobId: item.jobId 
     });
   }
-
-  private async incrementJobCounter(jobId: string, counter: 'processed' | 'success' | 'failed') {
-    const job = await this.prisma.bulkJob.update({
-      where: { id: jobId },
-      data: { [counter]: { increment: 1 } },
-    });
-    this.gateway.sendBulkJobUpdate(null, { 
-      jobId, 
-      processed: job.processed,
-      successful: job.success,
-      failed: job.failed,
-      total: job.totalRows,
-      status: job.status 
-    });
-  }
-
   async getBulkJobStatus(jobId: string) {
     const job = await this.prisma.bulkJob.findUnique({
       where: { id: jobId },
